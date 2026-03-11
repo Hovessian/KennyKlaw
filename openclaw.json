@@ -1,0 +1,26 @@
+{
+  "agents": {
+    "defaults": {
+      "model": { "primary": "asi1/asi1-mini" }
+    }
+  },
+  "models": {
+    "providers": {
+      "asi1": {
+        "baseUrl": "https://api.asi1.ai/v1",
+        "apiKey": "${ASI1_API_KEY}",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "asi1-mini",
+            "name": "ASI1 Mini",
+            "reasoning": false,
+            "input": ["text"],
+            "contextWindow": 128000,
+            "maxTokens": 4096
+          }
+        ]
+      }
+    }
+  }
+}

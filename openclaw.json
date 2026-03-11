@@ -58,7 +58,10 @@
   "plugins": {
     "entries": {
       "acpx": {
-        "enabled": true
+        "enabled": true,
+        "config": {
+          "permissionMode": "approve-all"
+        }
       }
     }
   }

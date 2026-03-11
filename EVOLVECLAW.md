@@ -34,6 +34,8 @@ Clone of KennyKlaw OpenClaw Gateway on GCP.
 - **Auth:** Authenticated via web Claude account (credentials copied into container)
 - **Node.js:** v22.22.1 (host)
 - **ACP/acpx:** Working — `@zed-industries/claude-agent-acp` installed in container
+- **acpx symlink:** `/usr/local/bin/acpx` → `/app/extensions/acpx/node_modules/.bin/acpx` (created manually, lost on container rebuild)
+- **acpx config:** `/home/node/.acpx/config.json` — maps `claude-code` and `claudecode` agent aliases to the claude adapter
 - **Container packages:** `@anthropic-ai/claude-code` + `@zed-industries/claude-agent-acp` (installed as root in container)
 
 ## Access
@@ -134,3 +136,9 @@ To make swap persistent, add to `/etc/fstab`:
   1. `~/.claude.json` (host) and `/home/node/.claude.json` (container) must have `hasCompletedOnboarding: true` and `hasTrustDialogAccepted: true` in the projects section for `/app`, `/home/node`, and `/home/node/.openclaw/workspace`.
   2. `~/.claude/settings.json` (host) and `/home/node/.claude/settings.json` (container) must have `disabledRemoteMcpServers` listing all remote MCP server IDs from the account. Without this, Claude Code hangs trying to connect to remote MCP servers (Gmail, Calendar, agentverse) via SSE. The cached feature flag `tengu_claudeai_mcp_connectors` gets overwritten by the API on every startup, so `settings.json` is the only durable fix.
 - **After re-auth:** Re-apply `hasTrustDialogAccepted: true` in `.claude.json` on both host and container. The `settings.json` fix persists across re-auth.
+- **ACP agent ID fix:** The `openclaw.json` must list `"claude"`, `"claude-code"`, and `"claudecode"` in `acp.allowedAgents` because ASI1-mini may use any of these variations. The `~/.acpx/config.json` must map `claude-code` and `claudecode` to `npx -y @zed-industries/claude-agent-acp@^0.21.0` (acpx only has `claude` as a built-in alias). Without this, `sessions_spawn` fails with "ACP agent not allowed by policy" or "acpx exited with code 1".
+- **Container rebuild checklist:** After `docker compose build`, re-apply these manual fixes:
+  1. `ln -sf /app/extensions/acpx/node_modules/.bin/acpx /usr/local/bin/acpx`
+  2. `mkdir -p /home/node/.acpx && cat > /home/node/.acpx/config.json` with the agent aliases
+  3. Re-apply `.claude.json` onboarding/trust fixes
+  4. Verify `/home/node/.claude/settings.json` still has `disabledRemoteMcpServers`

@@ -1,8 +1,18 @@
 {
-  "agents": {
-    "defaults": {
-      "model": { "primary": "asi1/asi1-mini" }
-    }
+  "acp": {
+    "enabled": true,
+    "backend": "acpx",
+    "defaultAgent": "claude",
+    "allowedAgents": [
+      "claude",
+      "claude-code",
+      "claudecode",
+      "codex",
+      "pi",
+      "opencode",
+      "gemini",
+      "kimi"
+    ]
   },
   "models": {
     "providers": {
@@ -20,6 +30,35 @@
             "maxTokens": 4096
           }
         ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "asi1/asi1-mini"
+      }
+    }
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "gateway": {
+    "mode": "local",
+    "controlUi": {
+      "allowedOrigins": [
+        "http://127.0.0.1:18789",
+        "http://127.0.0.1:18790"
+      ]
+    }
+  },
+  "plugins": {
+    "entries": {
+      "acpx": {
+        "enabled": true
       }
     }
   }

@@ -1,18 +1,19 @@
-# EvolveClaw Deployment
+# OpenClaw Gateway Deployments
 
-Clone of KennyKlaw OpenClaw Gateway on GCP.
+Two OpenClaw Gateway instances running on GCP in the same project.
 
 ## Infrastructure
 
-| Field | Value |
-|-------|-------|
-| **Project** | `fetch-coder` |
-| **Zone** | `us-central1-a` |
-| **Instance** | `evolveclaw` |
-| **Machine type** | `e2-medium` (2 vCPU, 4 GB RAM) |
-| **Boot disk** | 20 GB, Debian 12 |
-| **External IP** | `34.123.5.121` |
-| **Swap** | 2 GB (`/swapfile`) — required for Docker build |
+| Field | KennyKlaw | EvolveClaw |
+|-------|-----------|------------|
+| **Instance** | `kennyklaw` | `evolveclaw` |
+| **Project** | `fetch-coder` | `fetch-coder` |
+| **Zone** | `us-central1-a` | `us-central1-a` |
+| **Machine type** | `e2-medium` (2 vCPU, 4 GB) | `e2-medium` (2 vCPU, 4 GB) |
+| **Boot disk** | 20 GB, Debian 12 | 20 GB, Debian 12 |
+| **External IP** | `136.119.195.121` | `34.123.5.121` |
+| **Local tunnel port** | `18789` | `18790` |
+| **Swap** | 2 GB (`/swapfile`) | 2 GB (`/swapfile`) |
 
 ## Services
 
@@ -42,20 +43,22 @@ Clone of KennyKlaw OpenClaw Gateway on GCP.
 
 ### SSH Tunnel (Control UI)
 
+**KennyKlaw:**
+```bash
+gcloud compute ssh kennyklaw --zone=us-central1-a --project=fetch-coder -- -N -L 18789:127.0.0.1:18789
+```
+Then open: `http://127.0.0.1:18789/`
+
+**EvolveClaw:**
 ```bash
 gcloud compute ssh evolveclaw --zone=us-central1-a --project=fetch-coder -- -N -L 18790:127.0.0.1:18789
 ```
-
-Then open:
-```
-http://127.0.0.1:18790/#password=evolveclaw2026
-```
-
-Local tunnel port **18790** (KennyKlaw uses 18789).
+Then open: `http://127.0.0.1:18790/#password=evolveclaw2026`
 
 ### Direct SSH
 
 ```bash
+gcloud compute ssh kennyklaw --zone=us-central1-a --project=fetch-coder
 gcloud compute ssh evolveclaw --zone=us-central1-a --project=fetch-coder
 ```
 
@@ -143,3 +146,91 @@ To make swap persistent, add to `/etc/fstab`:
   2. `mkdir -p /home/node/.acpx && cat > /home/node/.acpx/config.json` with the agent aliases
   3. Re-apply `.claude.json` onboarding/trust fixes
   4. Verify `/home/node/.claude/settings.json` still has `disabledRemoteMcpServers`
+
+---
+
+## ACP Setup Script (for new or rebuilt containers)
+
+Run these commands inside the container after a fresh build or rebuild. Replace `INSTANCE` with `kennyklaw` or `evolveclaw`.
+
+```bash
+# SSH into the VM
+gcloud compute ssh INSTANCE --zone=us-central1-a --project=fetch-coder
+
+# 1. Install Claude Code and claude-agent-acp (as root inside container)
+docker exec -u root openclaw-openclaw-gateway-1 bash -c '
+npm install -g @anthropic-ai/claude-code @zed-industries/claude-agent-acp
+ln -sf /app/extensions/acpx/node_modules/.bin/acpx /usr/local/bin/acpx
+'
+
+# 2. Create acpx agent aliases config
+docker exec openclaw-openclaw-gateway-1 bash -c '
+mkdir -p /home/node/.acpx
+cat > /home/node/.acpx/config.json << EOF
+{
+  "agents": {
+    "claude-code": { "command": "npx -y @zed-industries/claude-agent-acp@^0.21.0" },
+    "claudecode": { "command": "npx -y @zed-industries/claude-agent-acp@^0.21.0" }
+  }
+}
+EOF
+'
+
+# 3. Create Claude Code settings (disable remote MCP servers)
+docker exec openclaw-openclaw-gateway-1 bash -c '
+mkdir -p /home/node/.claude
+cat > /home/node/.claude/settings.json << EOF
+{
+  "mcpServers": {},
+  "disabledRemoteMcpServers": [
+    "mcpsrv_01Rw7JQuvmdkMbP5coCeaZRm",
+    "mcpsrv_01BLtZittTchf5EVhECySrKZ",
+    "mcpsrv_012MZdsHzMNhMfqoahrDDom8",
+    "mcpsrv_018QaHjKCo6LJD24BY5CD14L",
+    "mcpsrv_013BdeAwdxLzZjMGrwGkQv1c"
+  ]
+}
+EOF
+'
+
+# 4. Create .claude.json with onboarding + trust dialog
+docker exec openclaw-openclaw-gateway-1 bash -c '
+cat > /home/node/.claude.json << EOF
+{
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "2.1.72",
+  "projects": {
+    "/app": { "allowedTools": [], "mcpServers": {}, "hasTrustDialogAccepted": true },
+    "/home/node": { "allowedTools": [], "mcpServers": {}, "hasTrustDialogAccepted": true },
+    "/home/node/.openclaw/workspace": { "allowedTools": [], "mcpServers": {}, "hasTrustDialogAccepted": true }
+  }
+}
+EOF
+'
+
+# 5. Copy Claude credentials (from an authenticated instance)
+# Get credentials from evolveclaw (or any instance with valid OAuth):
+#   gcloud compute ssh evolveclaw --zone=us-central1-a --project=fetch-coder --command='
+#     docker exec openclaw-openclaw-gateway-1 cat /home/node/.claude/.credentials.json'
+# Then write them into the target container:
+docker exec openclaw-openclaw-gateway-1 bash -c '
+cat > /home/node/.claude/.credentials.json << EOF
+{"claudeAiOauth":{"accessToken":"YOUR_TOKEN","refreshToken":"YOUR_REFRESH","expiresAt":TIMESTAMP,"scopes":["user:inference","user:mcp_servers","user:profile","user:sessions:claude_code"],"subscriptionType":"max","rateLimitTier":"default_claude_max_20x"}}
+EOF
+'
+
+# 6. Restart gateway to pick up changes
+cd ~/openclaw && docker compose restart openclaw-gateway
+
+# 7. Verify
+docker exec -e HOME=/home/node openclaw-openclaw-gateway-1 \
+  timeout 60 /usr/local/bin/acpx --verbose --approve-all claude exec "say hello"
+```
+
+### Test through gateway CLI
+
+```bash
+TOKEN=$(grep OPENCLAW_GATEWAY_TOKEN ~/openclaw/.env | cut -d= -f2)
+docker exec -e HOME=/home/node -e OPENCLAW_GATEWAY_TOKEN=$TOKEN openclaw-openclaw-gateway-1 \
+  timeout 180 node dist/index.js agent --message "use claude code to answer: what is 2+2?" --agent main
+```
